@@ -53,7 +53,8 @@ class VLMChat:
 
     `guard` проверяет запрос до вызова модели, см. `vlmkit.guardrails`.
     `keep_history=False` для независимых задач: история только занимает
-    контекст и путает модель.
+    контекст и путает модель. `thinking=False` выключает блок рассуждения:
+    с ним лимит токенов уходит в размышление, а ответ обрезается.
     """
 
     def __init__(
@@ -65,6 +66,7 @@ class VLMChat:
         guard: Any = None,
         keep_history: bool = True,
         max_new_tokens: int = settings.max_new_tokens,
+        thinking: bool = False,
     ) -> None:
         self.model = model
         self.processor = processor
@@ -72,6 +74,7 @@ class VLMChat:
         self.guard = guard
         self.keep_history = keep_history
         self.max_new_tokens = max_new_tokens
+        self.thinking = thinking
         self.history: list[Turn] = []
 
     def _messages(self, turn: Turn) -> list[dict[str, Any]]:
@@ -90,6 +93,7 @@ class VLMChat:
         inputs = self.processor.apply_chat_template(
             self._messages(turn),
             add_generation_prompt=True,
+            enable_thinking=self.thinking,
             tokenize=True,
             return_dict=True,
             return_tensors="pt",

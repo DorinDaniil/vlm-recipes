@@ -4,7 +4,7 @@
 оно на реальных данных и реальном процессоре. Ничего не обучает —
 только собирает батч и разглядывает метки.
 
-    python research/selfcheck.py
+    python tools/selfcheck.py
 
 Проверки намеренно грубые: они ловят расхождение теории с кодом, а не
 тонкие ошибки. Тонкие ловятся замерами.
@@ -84,7 +84,7 @@ def main() -> None:
     print(f"  инфо  формат вызова в tools.jsonl: {disk_style}")
     if disk_style != detect_style(template):
         print("        не совпадает с шаблоном — пересоберите:")
-        print("        python research/data/build_tools.py")
+        print("        python data/build_tools.py")
     print()
 
     # ── что утверждает 02-sft-math, раздел 1 ──────────────────────────
@@ -166,6 +166,20 @@ def main() -> None:
             "mask_thinking=False возвращает блок в градиент",
             "<think>" in loose,
             "флаг должен работать в обе стороны",
+        ))
+
+        # Замер идёт с выключенным рассуждением. Хвост промпта при этом
+        # должен совпадать с тем, что стоит перед ответом в обучении,
+        # иначе модель на инференсе видит префикс, которого не видела.
+        tail = processor.apply_chat_template(
+            [{"role": "user", "content": "проверка"}],
+            tokenize=False, add_generation_prompt=True, enable_thinking=False,
+        )
+        results.append(check(
+            "enable_thinking=False даёт тот же хвост, что перед ответом в обучении",
+            tail.endswith("<think>\n\n</think>\n\n") and "<think>\n\n</think>" in hidden,
+            "иначе инференс и обучение видят разные префиксы ответа",
+            evidence=repr(tail[-40:]),
         ))
 
     # ── ограничение замера, о котором стоит знать ─────────────────────

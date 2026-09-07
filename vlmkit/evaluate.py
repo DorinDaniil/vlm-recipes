@@ -50,16 +50,23 @@ def generate(
     system: str | None = None,
     max_new_tokens: int = 512,
     batch_size: int = 4,
+    thinking: bool = False,
 ) -> list[str]:
     """Сгенерировать ответы на промпты выборки.
 
     Из каждого примера берутся все реплики до первой ассистентской —
     это и есть промпт, остальное было бы подсказкой.
+
+    Рассуждение по умолчанию выключено: шаблон подставляет пустой блок
+    размышления — тот же, что стоит перед ответом в обучающих данных.
+    Иначе весь `max_new_tokens` уходит в рассуждение, и ответ не
+    начинается. С `thinking=True` блок остаётся в выводе, скореры
+    вырезают его через `strip_thinking`.
     """
     model.eval()
     with left_padding(processor):
         return _generate_batches(
-            model, processor, samples, system, max_new_tokens, batch_size
+            model, processor, samples, system, max_new_tokens, batch_size, thinking
         )
 
 
@@ -70,6 +77,7 @@ def _generate_batches(
     system: str | None,
     max_new_tokens: int,
     batch_size: int,
+    thinking: bool,
 ) -> list[str]:
     outputs: list[str] = []
 
@@ -85,7 +93,9 @@ def _generate_batches(
             prompts.append(head)
 
         texts = [
-            processor.apply_chat_template(p, tokenize=False, add_generation_prompt=True)
+            processor.apply_chat_template(
+                p, tokenize=False, add_generation_prompt=True, enable_thinking=thinking
+            )
             for p in prompts
         ]
         images = [img for s in chunk for img in s.load_images()]

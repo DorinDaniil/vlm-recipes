@@ -1,98 +1,122 @@
 # Бенчмарки
 
-Что измерять при выборе модели для агента с инструментами и где
-смотреть. Данные на середину 2026 года; лидерборды обновляются,
-адреса проверять.
+Семь источников по вызову инструментов и следованию инструкциям,
+на которых есть последние Qwen. Проверено 7 сентября 2026. Цифры
+из карточек моделей — самоотчёт разработчика; лидерборды меняются.
 
-## Что важно
+## Что вышло у Qwen
 
-| свойство | бенчмарк |
-|---|---|
-| вызов инструмента при необходимости | BFCL: simple, multiple, parallel |
-| отказ от вызова без необходимости | BFCL: irrelevance detection |
-| соблюдение правил на длинной траектории | τ-bench, pass^k |
-| соблюдение формата ответа | IFEval, strict |
+Qwen3.7 (май–июнь 2026) — только API: 3.7-Max, 3.7-Plus. Открытые веса
+Qwen3.8 (август 2026): Qwen3.8-27B (плотная, Apache 2.0),
+Qwen3.8-Flash-Next (125B MoE, 6B активных, лицензия qwen-community-1.0),
+Qwen3.8-2.4T-A95B (MoE). Все гибридные: рассуждение регулируется
+`reasoning_effort`. Из открытых предыдущего поколения — Qwen3.6-27B,
+Qwen3.6-35B-A3B, Qwen3.5-397B-A17B.
 
-Общий балл лидерборда усредняет несравнимые категории. Смотреть
-подкатегории. Вторая строка соответствует группе `direct`
-в `data/tools.jsonl`.
+## Источники
 
-## Вызов инструментов
-
-**BFCL** — Berkeley Function Calling Leaderboard.
-<https://gorilla.cs.berkeley.edu/leaderboard.html>
-Категории: simple, multiple, parallel, multi-turn (с v3), irrelevance
-detection. Разброс по irrelevance между моделями с близким общим
-баллом достигает 2×.
-
-**τ-bench.** <https://github.com/sierra-research/tau-bench>
-Агент в домене (retail, airline) с инструментами и политикой поведения.
-Метрика pass^k — доля задач, решённых во всех k попытках. Смотреть k = 4.
-τ²-bench — расширение с двусторонним диалогом.
-
-**ToolBench** <https://github.com/OpenBMB/ToolBench>, **API-Bank**,
-**NexusRaven** <https://huggingface.co/Nexusflow> — более ранние,
-частично насыщены.
-
-**MINT** — многоходовое взаимодействие с инструментами и обратной
-связью.
-
-## Следование инструкциям
-
-**IFEval.** <https://arxiv.org/abs/2311.07911>
-Инструкции с проверяемыми ограничениями («ровно три абзаца», «ответ
-в JSON»). Метрика prompt-level strict accuracy. Входит в Open LLM
-Leaderboard.
-
-**FollowBench**, **InfoBench** — многоуровневые ограничения.
-
-## Агентские среды
-
-**AgentBench** <https://github.com/THUDM/AgentBench>,
-**GAIA** <https://huggingface.co/spaces/gaia-benchmark/leaderboard>,
-**WebArena**, **OSWorld**.
-
-## VLM
-
-**OpenVLM Leaderboard.**
-<https://huggingface.co/spaces/opencompass/open_vlm_leaderboard>
-Для документов: DocVQA, ChartQA, InfoVQA, OCRBench. MMMU, MathVista —
-общее визуальное рассуждение.
-
-## Дашборды
-
-| | | |
+| | метрика | Qwen 3.7 / 3.8 |
 |---|---|---|
-| Open LLM Leaderboard | <https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard> | открытые модели, воспроизводимо, IFEval |
-| LMArena | <https://lmarena.ai> | парные сравнения людьми, Elo |
-| Artificial Analysis | <https://artificialanalysis.ai> | скорость, цена |
-| LiveBench | <https://livebench.ai> | обновляемые задания |
-| OpenCompass | <https://rank.opencompass.org.cn> | детально по Qwen |
+| τ³-Banking, τ²-bench | pass@1 по состоянию базы, усреднён по повторам; в τ² — pass^k | 3.8 Max 51.3 %, второе место |
+| IFBench | accuracy, 0–1; преемник IFEval | 3.8 Max 0.828, Flash-Next 0.813, 27B 0.795, 3.7 Max и Plus 0.791 |
+| MCP-Mark | pass rate на реальных MCP-серверах, 0–1 | 3.7 Max 0.608, 3.7-Plus 0.587, 3.6-35B-A3B 0.370; 3.8 пока нет |
+| MCP-Atlas | pass rate: задача зачтена при ≥ 75 % утверждений | таблица от 8 апреля 2026, Qwen нет; 3.7 Max 76.4 — самоотчёт |
+| Terminal-Bench 2.1 | pass@1, три прогона, харнесс Terminus 2 | 3.8-27B 73.0 по карточке |
+| Agent Arena | поведенческие сигналы на реальных агентных задачах | 3.8 Max с 17 августа, Flash-Next с 31 августа |
+| BFCL V4 | AST-accuracy; irrelevance / relevance; multi-turn | таблица от 12 апреля 2026, Qwen 3.7 / 3.8 нет |
 
-## Модели с сильным вызовом инструментов
+### τ³-Banking и τ²-bench
 
-Общего назначения с нативной поддержкой инструментов: Qwen 2.5 / 3.x,
-Llama 3.x (70B), GLM-4, DeepSeek-V3, Mistral.
+<https://artificialanalysis.ai/evaluations/tau3-banking>,
+<https://github.com/sierra-research/tau2-bench>, статья
+<https://arxiv.org/abs/2603.04370>.
 
-Специализированные под вызов функций: xLAM (Salesforce), Hermes
-(Nous Research), ToolACE, Functionary (MeetKai). На BFCL выше общих
-моделей того же размера; в свободном диалоге слабее.
+Агент общается с симулированным пользователем, вызывает инструменты
+и обязан соблюдать политику домена. Задача зачтена, если конечное
+состояние базы совпало с эталоном; качество текста не оценивается.
+τ³-Banking добавляет поиск нужной политики в корпусе около 700
+документов. Ближе всего к постановке «агент с Policy». В τ²-bench
+метрика pass^k — доля задач, решённых во всех k попытках; смотреть
+k = 4, разрыв с pass^1 — нестабильность. Больше лучше.
 
-## Ограничения
+### IFBench
 
-- Контаминация: ранние бенчмарки присутствуют в обучающих данных.
-  IFEval и BFCL устойчивее за счёт процедурно генерируемых проверок;
-  LiveBench обновляется намеренно.
-- Общий балл скрывает разброс по категориям.
-- Сравнивать модели одного размера.
-- Ни один бенчмарк не покрывает конкретную политику поведения.
-  Финальный выбор — собственный замер: `tools/selfcheck.py`,
-  `notebooks/`.
+<https://llm-stats.com/benchmarks/ifbench>, цифры в карточках моделей.
+
+Проверяемые кодом ограничения на ответ, как в IFEval, но новые типы
+ограничений, на которых модели не обучались. IFEval насыщен: у всех
+сильных моделей за 90. Все результаты самоотчётные. Больше лучше.
+
+### MCP-Mark и MCP-Atlas
+
+<https://llm-stats.com/benchmarks/mcp-mark>,
+<https://labs.scale.com/leaderboard/mcp_atlas>,
+<https://mcp-universe.github.io/>.
+
+Задачи на реальных MCP-серверах: найти инструмент, выбрать, вызвать,
+разобрать результат, довести цепочку. MCP-Atlas считает pass rate
+по утверждениям о результате, порог 75 %. Ближе к «пониманию тулов»,
+чем BFCL, но MCP-Atlas не обновлялся с апреля, а MCP-Mark целиком
+из самоотчётов. Больше лучше.
+
+### Terminal-Bench 2.1
+
+<https://artificialanalysis.ai/evaluations/terminalbench-v2-1>,
+<https://www.tbench.ai/>.
+
+Длинные задачи в настоящем терминале с программной проверкой
+результата; pass@1 по трём прогонам, харнесс Terminus 2 у всех
+моделей одинаковый. Меряет доведение цепочки до конца, не отдельный
+вызов. Больше лучше. Смещён в сторону кода.
+
+### Agent Arena
+
+<https://arena.ai/>.
+
+Запущен 4 июня 2026. Ранжирует модели на реальных агентных задачах
+пользователей по поведенческим сигналам: повторы, отклонённые действия,
+управляемость. Не голоса за текст, как в Text Arena. Единственный
+источник с живым потоком задач; методика закрытая.
+
+### BFCL V4
+
+<https://gorilla.cs.berkeley.edu/leaderboard.html>.
+
+Эталонный бенчмарк вызова функций: ответ сравнивается с эталонным
+вызовом по AST. Колонки irrelevance (подходящей функции нет, зачтён
+ответ без вызова) и relevance (вызов нужен, был ли он) — пара, которая
+у нас называется hit / false. Таблица не пополнялась с апреля 2026,
+новых Qwen в ней нет; код открыт, прогон на своих моделях — час.
+
+## Самоотчёт Qwen3.8
+
+Из карточек Qwen3.8-27B и Qwen3.8-Flash-Next, сентябрь 2026.
+
+| | 27B | Flash-Next | Qwen3.7-Plus |
+|---|---|---|---|
+| IFBench | 79.5 | 81.3 | 79.1 |
+| Terminal-Bench 2.1 | 73.0 | — | — |
+| Agents' Last Exam, pass@1 | 20.4 | 24.3 | 13.2 |
+| OSWorld-Verified | 84.3 | — | — |
+| WebArena-Verified | 64.8 | — | — |
+
+OSWorld и WebArena — агент в графическом интерфейсе по скриншотам;
+это агентный бенчмарк для VLM-части.
+
+## Что выпало и почему
+
+IFEval — насыщен, заменён IFBench. Open LLM Leaderboard — заморожен
+с 2025 года. AgentBench, GAIA, ToolBench, NexusRaven — с 2023–2024 года
+без новых моделей. LMArena Text — качество диалога, не инструменты.
+Artificial Analysis — <https://artificialanalysis.ai/models/qwen3-8-27b>
+— полезен как агрегатор: у них Qwen3.8-27B прогнан на τ³-Banking,
+Terminal-Bench, IFBench и своих наборах, но цифры отдаются только
+в интерфейсе.
 
 ## Порядок отбора
 
-1. BFCL, категория irrelevance
-2. τ-bench, pass^4
-3. IFEval, strict
-4. Для VLM — DocVQA, OCRBench
-5. Собственный замер на своих данных
+1. τ³-Banking или τ²-bench pass^4 — политика плюс инструменты
+2. IFBench — формат ответа
+3. MCP-Mark, MCP-Atlas — работа с инструментами по MCP
+4. BFCL irrelevance — свой прогон, таблица устарела
+5. Собственный замер: `tools/selfcheck.py`, `notebooks/`
