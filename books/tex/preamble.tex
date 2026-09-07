@@ -1,0 +1,46 @@
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setmonofont{Consolas}[Scale=0.86]
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{unicode-math}
+\setmathfont{Latin Modern Math}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{mdframed}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{acc}{HTML}{7A2E1E}
+\definecolor{dim}{HTML}{555555}
+\definecolor{boxbg}{HTML}{F4F1EC}
+
+\titleformat{\section}{\large\bfseries\color{acc}}{\thesection.}{0.5em}{}
+\titlespacing{\section}{0pt}{1.1em}{0.4em}
+\titleformat{\subsection}{\bfseries}{\thesubsection.}{0.5em}{}
+\titlespacing{\subsection}{0pt}{0.8em}{0.25em}
+
+\setlist[itemize]{leftmargin=1.2em,itemsep=0.15em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.4em,itemsep=0.15em,topsep=0.3em}
+\renewcommand{\arraystretch}{1.15}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+
+\newcommand{\qq}[1]{\texttt{\small #1}}
+\newcommand{\note}[1]{{\color{dim}\small #1}}
+
+% Врезка для вывода или ключевого следствия.
+\newmdenv[
+  backgroundcolor=boxbg, linewidth=0pt, skipabove=0.7em, skipbelow=0.7em,
+  innerleftmargin=0.9em, innerrightmargin=0.9em,
+  innertopmargin=0.6em, innerbottommargin=0.6em
+]{keybox}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator{\KL}{KL}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\operatorname{Var}}
