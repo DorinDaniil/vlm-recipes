@@ -630,11 +630,6 @@ KTO & метки & да & пары собрать дорого \\
 \end{tabular}
 \end{center}
 
-\vspace{1.5em}
-\aside{В trl 1.x отдельные \texttt{ORPOTrainer} и \texttt{CPOTrainer}
-слиты в \texttt{DPOTrainer} с разными значениями \texttt{loss\_type}.
-Математика та же, поменялся способ вызова.}
-
 \end{frame}
 
 % ══════════════════════════════════════════════════════════════
@@ -648,7 +643,7 @@ KTO & метки & да & пары собрать дорого \\
 v_\ell = \frac{1}{|P|}\sum_{p\in P} h_\ell(p)
 - \frac{1}{|N|}\sum_{n\in N} h_\ell(n),
 \qquad
-h_\ell \leftarrow h_\ell + s\,\frac{v_\ell}{\lVert v_\ell\rVert}
+h_\ell \leftarrow h_\ell + s\,v_\ell
 \]
 
 \vspace{0.5em}
@@ -683,33 +678,6 @@ DPO / ORPO & дни & нужны пары предпочтений \\
 \vspace{1em}
 \key{Двигаться сверху вниз и останавливаться, как только результат
 достигнут.}
-
-\end{frame}
-
-\begin{frame}{Что мерить}
-
-Метрика всегда \textbf{пара}, и порознь обе бессмысленны:
-
-\vspace{1em}
-\begin{center}
-\begin{tabular}{@{}lll@{}}
-\toprule
-\textbf{Метрика} & \textbf{На чём} & \textbf{Куда} \\
-\midrule
-доля срабатываний & целевые запросы & к 100\% \\
-доля ложных срабатываний & контрольные запросы & к 0\% \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\vspace{1.2em}
-Модель, срабатывающая всегда, даёт идеальную первую и катастрофическую
-вторую.
-
-\vspace{0.8em}
-\key{Отсюда требование к данным: в каждом наборе нужна
-\textbf{отрицательная группа} — примеры, похожие на целевые, но
-требующие обычного ответа.}
 
 \end{frame}
 

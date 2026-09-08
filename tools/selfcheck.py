@@ -23,6 +23,7 @@ from vlmkit import ChatCollator, LoadConfig, load_jsonl
 from vlmkit.data import IGNORE_INDEX
 from vlmkit.model import load_processor
 from vlmkit.toolcalls import detect_style
+from vlmkit.toytools import SCHEMA
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 
@@ -33,7 +34,7 @@ def split_by_mask(sample: Any, processor: Any, **collator_kwargs) -> tuple[str, 
     Это тот же механизм, что в `preview`, только результат отдаётся
     двумя строками, по которым удобно искать подстроки.
     """
-    collator = ChatCollator(processor, **collator_kwargs)
+    collator = ChatCollator(processor, tools=SCHEMA, **collator_kwargs)
     batch = collator([sample])
     ids = batch["input_ids"][0].tolist()
     labels = batch["labels"][0].tolist()
@@ -67,16 +68,15 @@ def main() -> None:
     tools = load_jsonl(DATA / "tools.jsonl")
     raw = [json.loads(l) for l in (DATA / "tools.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
 
+    multi_raw = next(r for r in raw if r["group"] == "multi")
     multi = next(s for s, r in zip(tools, raw) if r["group"] == "multi")
+    question = multi_raw["messages"][0]["content"][0]["text"]
     trained, hidden = split_by_mask(multi, processor)
 
     # Что лежит на диске — отдельно от того, что пережило коллацию.
     # Без этого разделения провал ниже нельзя отнести ни к данным,
     # ни к шаблону: непонятно, где искать.
-    on_disk = json.dumps(raw[0], ensure_ascii=False) + json.dumps(
-        next(r for r in raw if r["group"] == "multi"), ensure_ascii=False
-    )
-    disk_style = "xml" if "<function=" in on_disk else "json"
+    disk_style = "xml" if "<function=" in json.dumps(multi_raw, ensure_ascii=False) else "json"
 
     results = []
 
@@ -92,14 +92,19 @@ def main() -> None:
 
     results.append(check(
         "промпт пользователя скрыт от функции потерь",
-        "Проверь, обоснована ли методика" in hidden
-        and "Проверь, обоснована ли методика" not in trained,
+        question in hidden and question not in trained,
+        evidence=repr(trained[:200]),
     ))
     results.append(check(
         "результат вызова инструмента скрыт",
-        "отбор выборки, обоснование объёма" in hidden
-        and "отбор выборки, обоснование объёма" not in trained,
-        "модель, обученная его предсказывать, начнёт сочинять содержимое",
+        "<tool_response>" in hidden and "<tool_response>" not in trained,
+        "модель, обученная его предсказывать, начнёт сочинять результаты",
+        evidence=repr(trained[:200]),
+    ))
+    results.append(check(
+        "описание инструментов скрыто",
+        "<tools>" in hidden and "<tools>" not in trained,
+        evidence=repr(hidden[:200]),
     ))
     # Ищем не по формату вызова, а по нейтральному признаку: сам тег
     # <tool_call> одинаков в обоих форматах, и проверка не развалится
@@ -110,17 +115,17 @@ def main() -> None:
         evidence=repr(trained[:200]),
     ))
     results.append(check(
-        "открыты ВСЕ реплики ассистента, а не последняя",
-        trained.count("<tool_call>") == 2,
-        "в траектории multi их две",
-        evidence=f"нашлось {trained.count('<tool_call>')}",
+        "открыты ВСЕ вызовы и конечный ответ, а не последняя реплика",
+        trained.count("<tool_call>") == 2 and multi_raw["expected"][0] in trained,
+        "в траектории multi два вызова за один ход и ответ с обоими числами",
+        evidence=f"нашлось {trained.count('<tool_call>')} вызовов",
     ))
 
     share = len(trained) / max(len(trained) + len(hidden), 1)
     results.append(check(
         "доля обучаемого текста не ничтожна",
-        share > 0.05,
-        f"{share:.0%} — ниже 5% почти весь батч уходит впустую",
+        share > 0.03,
+        f"{share:.0%} — описание инструментов в system длинное, поэтому порог 3%",
     ))
 
     # ── что утверждает 00-basics ──────────────────────────────────────
@@ -184,9 +189,9 @@ def main() -> None:
 
     # ── ограничение замера, о котором стоит знать ─────────────────────
     print("\n── границы замера ──")
-    print("  инфо  evaluate.generate строит промпт до ПЕРВОЙ реплики ассистента")
-    print("        значит меряется только первый шаг траектории,")
-    print("        а не доведение её до конца")
+    print("  инфо  evaluate.generate строит промпт до ПЕРВОЙ реплики ассистента:")
+    print("        меряется первый шаг траектории. Доведение до верного итога")
+    print("        меряется циклом solve() в 04-tools.")
 
     print(f"\nпройдено {sum(results)} из {len(results)}")
     sys.exit(0 if all(results) else 1)

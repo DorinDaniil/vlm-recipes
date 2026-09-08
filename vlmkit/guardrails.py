@@ -2,7 +2,7 @@
 
 Четыре независимых слоя: системный промпт, правила, модель-судья,
 проверка ответа. Компромиссы и порядок применения — в
-`research/03-behavior.pdf`.
+`books/03-alignment.pdf`.
 """
 
 from __future__ import annotations

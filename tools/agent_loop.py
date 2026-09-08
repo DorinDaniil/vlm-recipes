@@ -10,37 +10,18 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from vlmkit.toolcalls import detect_style, parse_tool_calls, strip_thinking
 
+# Схема — то, что видит модель через ветку `tools` шаблона. Функции —
+# то, что реально исполняется. Модель имён функций не вызывает: она
+# порождает строку, а имя из неё сопоставляет с кодом `run_tool`.
+from vlmkit.toytools import SCHEMA as TOOLS_SCHEMA, run as run_tool
+
 MAX_STEPS = 8
-
-
-# ── что умеет система ─────────────────────────────────────────────────
-
-TOOLS_SCHEMA = [
-    {
-        "type": "function",
-        "function": {
-            "name": "read_document",
-            "description": "Текст раздела работы",
-            "parameters": {
-                "type": "object",
-                "properties": {"section_id": {"type": "string"}},
-                "required": ["section_id"],
-            },
-        },
-    },
-]
-
-#: Что реально исполняется. Модель имён этих функций не вызывает —
-#: она порождает строку, а сопоставляет и запускает вот этот словарь.
-TOOLS: dict[str, Callable[..., str]] = {
-    "read_document": lambda section_id: f"Раздел {section_id}: ...",
-}
 
 
 # ── сборка промпта ────────────────────────────────────────────────────
@@ -118,12 +99,7 @@ def run_agent(model: Any, processor: Any, request: str, state: dict) -> list[dic
             break  # модель ответила словами — цикл окончен
 
         for call in calls:
-            handler = TOOLS.get(call["name"])
-            result = (
-                handler(**call["arguments"])
-                if handler
-                else f"Ошибка: инструмента {call['name']} не существует"
-            )
+            result = run_tool(call["name"], call["arguments"])
             # Результат приходит извне. В обучающих данных эти позиции
             # маскируются, иначе модель начнёт его сочинять.
             messages.append({"role": "tool", "content": result})

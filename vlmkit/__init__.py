@@ -7,15 +7,17 @@
     model       загрузка, выгрузка памяти, отчёт по картам
     data        формат примеров и коллатор с маскированием
     evaluate    генерация на отложенной выборке и парные метрики
+    steering    векторы управления
+    toolcalls   разбор и сборка вызовов инструментов
+    toytools    игрушечные инструменты, которые считают по-настоящему
     compat      фильтр аргументов и поиск тренеров TRL по версии
     chat        диалог с моделью
     guardrails  фильтрация запросов без дообучения
 
-Полный цикл обучения со всеми вызовами видно в
-`research/experiments.ipynb`.
+Полный цикл обучения со всеми вызовами — в `notebooks/`.
 """
 
-from vlmkit import compat, evaluate, steering, toolcalls
+from vlmkit import compat, evaluate, steering, toolcalls, toytools
 from vlmkit.chat import VLMChat
 from vlmkit.config import Settings, settings
 from vlmkit.data import ChatCollator, Sample, describe, load_jsonl, preview, save_jsonl
@@ -44,6 +46,7 @@ __all__ = [
     "cleanup",
     "compat",
     "toolcalls",
+    "toytools",
     "describe",
     "evaluate",
     "free",

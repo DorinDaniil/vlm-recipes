@@ -3,9 +3,9 @@
 Абстрактные свойства ответа представлены в активациях приблизительно
 линейно. Берём два набора текстов, различающихся только интересующим
 свойством, снимаем активации на среднем слое и вычитаем средние.
-Полученное направление прибавляем при генерации.
+Полученную разность прибавляем к скрытым состояниям при генерации.
 
-Границы применимости — в `03-behavior.pdf`.
+Границы применимости — в `03-alignment.pdf`.
 """
 
 from __future__ import annotations
@@ -38,9 +38,15 @@ def decoder_layers(model: Any) -> Any:
 
 @dataclass(slots=True)
 class SteeringVector:
-    """Направление в пространстве активаций и слой, к которому оно относится."""
+    """Единичное направление, его исходная длина и слой.
+
+    `direction` нормировано, `scale` — норма разности средних до
+    нормировки. При `strength=1` прибавляется ровно разность средних:
+    это естественная единица, в ней написаны работы про вектор отказа.
+    """
 
     direction: torch.Tensor
+    scale: float
     layer: int
 
     @classmethod
@@ -55,24 +61,24 @@ class SteeringVector:
         """Построить вектор по двум наборам текстов.
 
         Наборы должны различаться именно интересующим свойством: если
-        они различаются ещё и темой, вектор выучит тему. Хватает
-        нескольких десятков пар.
+        они различаются ещё и темой, вектор выучит тему. Удобно давать
+        пары с общим началом — общая часть в разности сокращается.
+        Хватает нескольких десятков пар.
         """
         pos = _mean_activation(model, processor, positive, layer)
         neg = _mean_activation(model, processor, negative, layer)
-        # Нормируем, чтобы strength означал одно и то же независимо от
-        # масштаба активаций конкретной модели и слоя.
-        direction = pos - neg
-        return cls(direction / direction.norm(), layer)
+        diff = pos - neg
+        return cls(diff / diff.norm(), float(diff.norm()), layer)
 
     @contextmanager
     def applied(self, model: Any, strength: float = 1.0) -> Iterator[None]:
         """Включить вектор на время блока.
 
-        Начинайте со strength=1.0; выше 3–4 у большинства моделей рушится
+        Начинайте со strength=1.0 и смотрите на сырые ответы: ниже 0.5
+        эффект тонет в шуме, выше 2 у большинства моделей рушится
         связность. Отрицательные значения подавляют свойство.
         """
-        direction = self.direction.to(model.device)
+        shift = (strength * self.scale * self.direction).to(model.device)
 
         def hook(module: Any, args: Any, output: Any) -> Any:
             # Слой декодера возвращает кортеж, скрытые состояния первые.
@@ -80,7 +86,7 @@ class SteeringVector:
             # Вектор хранится в float32 ради устойчивости усреднения,
             # а модель считает в bfloat16. Без приведения типа следующий
             # линейный слой падает на несовпадении dtype.
-            shifted = hidden + (strength * direction).to(hidden.dtype)
+            shifted = hidden + shift.to(hidden.dtype)
             return (shifted, *output[1:]) if isinstance(output, tuple) else shifted
 
         handle = decoder_layers(model)[self.layer].register_forward_hook(hook)
@@ -90,12 +96,12 @@ class SteeringVector:
             handle.remove()
 
     def save(self, path: str) -> None:
-        torch.save({"direction": self.direction, "layer": self.layer}, path)
+        torch.save({"direction": self.direction, "scale": self.scale, "layer": self.layer}, path)
 
     @classmethod
     def load(cls, path: str) -> SteeringVector:
         data = torch.load(path)
-        return cls(data["direction"], data["layer"])
+        return cls(data["direction"], data["scale"], data["layer"])
 
 
 def _mean_activation(

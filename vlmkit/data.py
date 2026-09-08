@@ -143,6 +143,7 @@ class ChatCollator:
         processor: Any,
         *,
         system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
         mask_prompt: bool = True,
         mask_thinking: bool = True,
         assistant_open: str = QWEN_ASSISTANT_OPEN,
@@ -153,6 +154,10 @@ class ChatCollator:
     ) -> None:
         self.processor = processor
         self.system = system
+        #: Описания инструментов для ветки `tools` шаблона. Те же, что
+        #: при генерации, иначе модель учится на одном списке, а работает
+        #: с другим.
+        self.tools = tools
         self.mask_prompt = mask_prompt
 
         #: Скрывать блок размышления внутри реплики ассистента.
@@ -219,7 +224,7 @@ class ChatCollator:
     def __call__(self, samples: Sequence[Sample]) -> dict[str, torch.Tensor]:
         prepared = [s.with_system(self.system) for s in samples]
         texts = [
-            self.processor.apply_chat_template(s.messages, tokenize=False)
+            self.processor.apply_chat_template(s.messages, tools=self.tools, tokenize=False)
             for s in prepared
         ]
         # Плоский список: процессор сопоставляет картинки с плейсхолдерами
@@ -270,7 +275,13 @@ def describe(samples: Sequence[Sample], processor: Any = None) -> str:
     return "\n".join(lines)
 
 
-def preview(sample: Sample, processor: Any, *, system: str | None = None) -> str:
+def preview(
+    sample: Sample,
+    processor: Any,
+    *,
+    system: str | None = None,
+    tools: list[dict[str, Any]] | None = None,
+) -> str:
     """Показать, на чём модель учится в этом примере.
 
     Обучаемые токены выделены ⟦скобками⟧, остальное скрыто от функции
@@ -280,7 +291,7 @@ def preview(sample: Sample, processor: Any, *, system: str | None = None) -> str
 
         >>> print(preview(samples[0], processor))
     """
-    collator = ChatCollator(processor, system=system)
+    collator = ChatCollator(processor, system=system, tools=tools)
     batch = collator([sample])
     ids = batch["input_ids"][0].tolist()
     labels = batch["labels"][0].tolist()
