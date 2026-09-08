@@ -9,7 +9,8 @@
     evaluate    генерация на отложенной выборке и парные метрики
     steering    векторы управления
     toolcalls   разбор и сборка вызовов инструментов
-    toytools    игрушечные инструменты, которые считают по-настоящему
+    skills      навыки — единственный инструмент ассистента студента
+    rubric      автопроверки ответов по рубрикам голд-сета
     compat      фильтр аргументов и поиск тренеров TRL по версии
     chat        диалог с моделью
     guardrails  фильтрация запросов без дообучения
@@ -17,7 +18,7 @@
 Полный цикл обучения со всеми вызовами — в `notebooks/`.
 """
 
-from vlmkit import compat, evaluate, steering, toolcalls, toytools
+from vlmkit import compat, evaluate, rubric, skills, steering, toolcalls
 from vlmkit.chat import VLMChat
 from vlmkit.config import Settings, settings
 from vlmkit.data import ChatCollator, Sample, describe, load_jsonl, preview, save_jsonl
@@ -46,7 +47,8 @@ __all__ = [
     "cleanup",
     "compat",
     "toolcalls",
-    "toytools",
+    "rubric",
+    "skills",
     "describe",
     "evaluate",
     "free",

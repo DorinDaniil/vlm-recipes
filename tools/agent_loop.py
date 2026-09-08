@@ -16,11 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from vlmkit.toolcalls import detect_style, parse_tool_calls, strip_thinking
 
-# Схема — то, что видит модель через ветку `tools` шаблона. Функции —
-# то, что реально исполняется. Модель имён функций не вызывает: она
-# порождает строку, а имя из неё сопоставляет с кодом `run_tool`.
-from vlmkit.toytools import SCHEMA as TOOLS_SCHEMA, run as run_tool
+# Единственный инструмент — select_skill: модель выбирает навык, код
+# подставляет текст методики. Схема — то, что модель видит через ветку
+# `tools` шаблона; `run_tool` — то, что реально исполняется.
+from vlmkit.skills import run as run_tool, schema
 
+TOOLS_SCHEMA = schema()
 MAX_STEPS = 8
 
 
