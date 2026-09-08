@@ -1,27 +1,19 @@
-"""Замер качества: генерация на отложенной выборке и подсчёт метрик.
+"""Вероятностные метрики: perplexity и предпочтение пар.
 
-Детектор даёт бинарный вердикт по каждому ответу, дальше — матрица
-ошибок. Главная пара: recall на целевой группе и FPR на контрольной,
-оси ROC-кривой. Порознь они бессмысленны — модель, срабатывающая
-всегда, даёт идеальный recall и катастрофический FPR.
-
-Рядом стандартные величины для задач, где детектора мало: perplexity
-целевых ответов (SFT), preference accuracy и margin (выравнивание),
-совпадение вызова с эталоном по имени и аргументам (как в BFCL).
+Генерация и подсчёт попаданий живут в `notebooks/common.py` — они зависят
+от формата ситуации, а здесь только то, что считается по логитам и не
+зависит ни от задачи, ни от рубрик.
 """
 
 from __future__ import annotations
 
 import math
-import re
 from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Iterator, Sequence
 
 import torch
 
 from vlmkit.data import IGNORE_INDEX, ChatCollator, Sample
-from vlmkit.toolcalls import parse_tool_calls, strip_thinking
 
 
 @contextmanager
@@ -48,147 +40,6 @@ def left_padding(processor: Any) -> Iterator[None]:
 
 
 @torch.inference_mode()
-def generate(
-    model: Any,
-    processor: Any,
-    samples: Sequence[Sample],
-    *,
-    system: str | None = None,
-    max_new_tokens: int = 512,
-    batch_size: int = 4,
-    thinking: bool = False,
-    tools: list[dict[str, Any]] | None = None,
-) -> list[str]:
-    """Сгенерировать ответы на промпты выборки.
-
-    Из каждого примера берутся все реплики до первой ассистентской —
-    это и есть промпт, остальное было бы подсказкой. `tools` уходит
-    в ветку `tools` шаблона — тот же список, что был у коллатора.
-
-    Рассуждение по умолчанию выключено: шаблон подставляет пустой блок
-    размышления — тот же, что стоит перед ответом в обучающих данных.
-    Иначе весь `max_new_tokens` уходит в рассуждение, и ответ не
-    начинается. С `thinking=True` блок остаётся в выводе, скореры
-    вырезают его через `strip_thinking`.
-    """
-    model.eval()
-    with left_padding(processor):
-        return _generate_batches(
-            model, processor, samples, system, max_new_tokens, batch_size, thinking, tools
-        )
-
-
-def _generate_batches(
-    model: Any,
-    processor: Any,
-    samples: Sequence[Sample],
-    system: str | None,
-    max_new_tokens: int,
-    batch_size: int,
-    thinking: bool,
-    tools: list[dict[str, Any]] | None,
-) -> list[str]:
-    outputs: list[str] = []
-
-    for start in range(0, len(samples), batch_size):
-        chunk = [s.with_system(system) for s in samples[start : start + batch_size]]
-        prompts = []
-        for s in chunk:
-            head: list[dict[str, Any]] = []
-            for message in s.messages:
-                if message["role"] == "assistant":
-                    break
-                head.append(message)
-            prompts.append(head)
-
-        texts = [
-            processor.apply_chat_template(
-                p, tools=tools, tokenize=False, add_generation_prompt=True,
-                enable_thinking=thinking,
-            )
-            for p in prompts
-        ]
-        images = [img for s in chunk for img in s.load_images()]
-        kwargs: dict[str, Any] = {"text": texts, "return_tensors": "pt", "padding": True}
-        if images:
-            kwargs["images"] = images
-
-        batch = processor(**kwargs).to(model.device)
-        generated = model.generate(**batch, max_new_tokens=max_new_tokens, do_sample=False)
-        width = batch["input_ids"].shape[1]
-        outputs += [
-            processor.decode(row[width:], skip_special_tokens=True).strip()
-            for row in generated
-        ]
-
-    return outputs
-
-
-@dataclass(slots=True)
-class Suite:
-    """Набор для замера: примеры, разметка групп и правило зачёта.
-
-    `positive` — группы, где поведение должно срабатывать. Остальные
-    группы образуют контрольную часть, на которой считается доля ложных.
-    """
-
-    name: str
-    samples: list[Sample]
-    groups: list[str]
-    positive: set[str]
-    #: (ответ модели, эталон) → сработало ли поведение
-    fires: Callable[[str, Sample], bool]
-    system: str | None = None
-    tools: list[dict[str, Any]] | None = None
-
-    def score(self, predictions: Sequence[str]) -> dict[str, float]:
-        """Матрица ошибок и метрики из неё.
-
-        Срабатывание на целевой группе — TP, пропуск там же — FN;
-        срабатывание на контрольной — FP, молчание — TN. Отсюда recall
-        (TPR), FPR, precision, F1 и accuracy.
-        """
-        tp = fp = tn = fn = 0
-        for group, prediction, sample in zip(self.groups, predictions, self.samples):
-            fired = bool(self.fires(prediction, sample))
-            if group in self.positive:
-                tp, fn = tp + fired, fn + (not fired)
-            else:
-                fp, tn = fp + fired, tn + (not fired)
-        recall = tp / max(tp + fn, 1)
-        fpr = fp / max(fp + tn, 1)
-        precision = tp / (tp + fp) if tp + fp else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-        return {
-            "recall": recall,
-            "fpr": fpr,
-            "precision": precision,
-            "f1": f1,
-            "accuracy": (tp + tn) / max(len(predictions), 1),
-            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
-            "n": len(predictions),
-        }
-
-    def rates(self, predictions: Sequence[str]) -> dict[str, float]:
-        """Доля срабатываний по каждой группе отдельно."""
-        fired: dict[str, list[bool]] = {}
-        for group, prediction, sample in zip(self.groups, predictions, self.samples):
-            fired.setdefault(group, []).append(self.fires(prediction, sample))
-        return {g: round(sum(v) / len(v), 2) for g, v in fired.items()}
-
-
-def run(model: Any, processor: Any, suite: Suite, **kwargs: Any) -> dict[str, float]:
-    """Прогнать один набор и вернуть метрики."""
-    predictions = generate(
-        model, processor, suite.samples, system=suite.system, tools=suite.tools, **kwargs
-    )
-    return suite.score(predictions)
-
-
-# ── вероятностные метрики: без генерации, по тем же меткам, что в обучении ──
-
-
-@torch.inference_mode()
 def sequence_logprobs(
     model: Any,
     processor: Any,
@@ -201,7 +52,7 @@ def sequence_logprobs(
     """Сумма log-вероятностей обучаемых токенов и их число, по примеру.
 
     Считается тем же коллатором, что при обучении, поэтому в сумму входят
-    ровно те позиции, что входят в функцию потерь: ответ ассистента без
+    ровно те позиции, что входят в функцию потерь: реплики ассистента без
     промпта, результатов инструментов и блока размышления.
     """
     collator = ChatCollator(processor, system=system, tools=tools)
@@ -254,77 +105,3 @@ def preference_accuracy(
         "margin": sum(margins) / max(len(margins), 1),
         "n": len(margins),
     }
-
-
-# ── готовые правила зачёта ────────────────────────────────────────────
-
-
-def returns_question(text: str, sample: Sample) -> bool:
-    """Модель вернула решение пользователю, а не выдала готовый ответ.
-
-    Блок размышления отсекается: у рассуждающей модели он полон вопросов
-    к самой себе, и без этого метрика мерила бы наличие размышления,
-    а не поведение в ответе.
-    """
-    return "?" in strip_thinking(text)
-
-
-def calls_tool(name: str) -> Callable[[str, Sample], bool]:
-    """Модель вызвала именно этот инструмент."""
-
-    def check(text: str, sample: Sample) -> bool:
-        return any(c.get("name") == name for c in parse_tool_calls(text))
-
-    return check
-
-
-def calls_any_tool(text: str, sample: Sample) -> bool:
-    return bool(parse_tool_calls(text))
-
-
-def _message_text(message: dict[str, Any]) -> str:
-    content = message.get("content", "")
-    if isinstance(content, str):
-        return content
-    return "".join(part.get("text", "") for part in content if isinstance(part, dict))
-
-
-def _normalized_calls(text: str) -> list[str]:
-    # Пробелы в значениях не считаются: «17*23» и «17 * 23» — один вызов.
-    # Порядок вызовов тоже: BFCL в категории parallel его не проверяет.
-    calls = [
-        (c.get("name"), {k: re.sub(r"\s+", "", str(v)) for k, v in c.get("arguments", {}).items()})
-        for c in parse_tool_calls(text)
-    ]
-    return sorted(repr(c) for c in calls)
-
-
-def matches_reference_call(text: str, sample: Sample) -> bool:
-    """Вызов совпал с эталонным из примера по имени и аргументам.
-
-    Так считается accuracy в BFCL: сравнение разобранного вызова
-    с эталоном, а не факт вызова. Эталон — первая реплика ассистента
-    в примере. Если эталон без вызова, срабатыванием считается любой
-    вызов: на контрольной группе это и есть ложное срабатывание
-    (irrelevance в терминах BFCL).
-    """
-    reference = next((m for m in sample.messages if m.get("role") == "assistant"), None)
-    expected = _normalized_calls(_message_text(reference)) if reference else []
-    actual = _normalized_calls(text)
-    if not expected:
-        return bool(actual)
-    return actual == expected
-
-
-def matches_format(pattern: str) -> Callable[[str, Sample], bool]:
-    """Ответ соответствует заданной структуре.
-
-    Для скиллов формат задан жёстко, поэтому соблюдение проверяется
-    регулярным выражением, без второй модели в роли судьи.
-    """
-    compiled = re.compile(pattern, re.MULTILINE | re.DOTALL)
-
-    def check(text: str, sample: Sample) -> bool:
-        return bool(compiled.search(text.strip()))
-
-    return check

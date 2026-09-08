@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "notebooks"))
 
-from common import SYSTEM, TOOLS, load_rows, trajectory  # noqa: E402
-from vlmkit import ChatCollator, LoadConfig  # noqa: E402
+from common import MODEL_ID, SYSTEM, TOOLS, load_rows, trajectory  # noqa: E402
+from vlmkit import ChatCollator  # noqa: E402
 from vlmkit.data import IGNORE_INDEX  # noqa: E402
 from vlmkit.model import load_processor  # noqa: E402
 from vlmkit.toolcalls import detect_style  # noqa: E402
@@ -59,9 +59,8 @@ def check(claim: str, ok: bool, detail: str = "", evidence: str = "") -> bool:
 
 
 def main() -> None:
-    cfg = LoadConfig()
-    print(f"модель: {cfg.model_id}\nвеса не грузим, нужен только процессор\n")
-    processor = load_processor(cfg)
+    print(f"модель: {MODEL_ID}\nвеса не грузим, нужен только процессор\n")
+    processor = load_processor(MODEL_ID)
     template = processor.tokenizer.chat_template or ""
     style = detect_style(template)
 

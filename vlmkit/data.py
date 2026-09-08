@@ -1,21 +1,18 @@
-"""Формат данных и сборка батчей.
+"""Формат примера и сборка батча.
 
-Единый формат — список реплик. Простые пары «вопрос-ответ», многоходовые
-диалоги и агентские траектории с вызовами инструментов описываются им
-одинаково, и коллатор для всех один.
+Пример — список реплик: system, user, assistant, tool. Простая пара
+«запрос-ответ» и агентская траектория с вызовом инструмента описываются
+одинаково, и коллатор для них один.
 
-JSONL, по примеру на строку. Две формы, обе понимаются автоматически:
-
-    {"question": "...", "answer": "...", "context": "...", "image": "..."}
-    {"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}
+Роль tool несёт результат вызова: он приходит извне, и обучаться на нём
+нельзя, иначе модель начнёт сочинять содержимое вместо вызова.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import torch
 from PIL import Image
@@ -35,38 +32,25 @@ QWEN_THINK_CLOSE = "</think>"
 
 @dataclass(slots=True)
 class Sample:
-    """Пример: последовательность реплик плюс картинки, если есть.
-
-    Роли: system, user, assistant, tool. Роль tool несёт результат вызова
-    инструмента — она приходит извне, и обучаться на ней нельзя.
-    """
+    """Пример: последовательность реплик плюс картинки, если есть."""
 
     messages: list[dict[str, Any]]
     images: list[str | Path] = field(default_factory=list)
 
     @classmethod
-    def from_qa(
-        cls,
-        question: str,
-        answer: str,
-        *,
-        context: str | None = None,
-        system: str | None = None,
-        image: str | Path | None = None,
-    ) -> Sample:
-        """Собрать пример из пары. Контекст идёт перед запросом."""
-        text = f"{context}\n\n{question}" if context else question
+    def from_qa(cls, question: str, answer: str, *, image: str | Path | None = None) -> Sample:
+        """Пара «запрос-ответ». Системный промпт подставит коллатор."""
         content: list[dict[str, Any]] = []
         if image is not None:
             content.append({"type": "image"})
-        content.append({"type": "text", "text": text})
-
-        messages: list[dict[str, Any]] = []
-        if system:
-            messages.append({"role": "system", "content": [{"type": "text", "text": system}]})
-        messages.append({"role": "user", "content": content})
-        messages.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
-        return cls(messages, [image] if image is not None else [])
+        content.append({"type": "text", "text": question})
+        return cls(
+            [
+                {"role": "user", "content": content},
+                {"role": "assistant", "content": [{"type": "text", "text": answer}]},
+            ],
+            [image] if image is not None else [],
+        )
 
     def load_images(self) -> list[Image.Image]:
         return [Image.open(p).convert("RGB") for p in self.images]
@@ -80,39 +64,6 @@ class Sample:
             return self
         head = {"role": "system", "content": [{"type": "text", "text": system}]}
         return Sample([head, *self.messages], self.images)
-
-
-def load_jsonl(path: str | Path) -> list[Sample]:
-    """Прочитать датасет. Обе формы записи понимаются автоматически."""
-    samples: list[Sample] = []
-    with Path(path).open(encoding="utf-8") as handle:
-        for number, line in enumerate(handle, start=1):
-            if not (line := line.strip()):
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}, строка {number}: {exc}") from exc
-
-            if "messages" in record:
-                samples.append(Sample(record["messages"], record.get("images", [])))
-            else:
-                samples.append(
-                    Sample.from_qa(
-                        record["question"],
-                        record["answer"],
-                        context=record.get("context"),
-                        image=record.get("image"),
-                    )
-                )
-    return samples
-
-
-def save_jsonl(samples: Iterable[Sample], path: str | Path) -> None:
-    with Path(path).open("w", encoding="utf-8") as handle:
-        for s in samples:
-            record = {"messages": s.messages, "images": [str(i) for i in s.images]}
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _find_subsequence(haystack: list[int], needle: list[int], start: int) -> int:
@@ -129,13 +80,11 @@ class ChatCollator:
     """Список примеров → батч тензоров.
 
     Обучаемся только внутри реплик ассистента. Всё прочее скрыто от функции
-    потерь: промпт пользователя, системная инструкция, служебные токены
-    картинки и — существенно для агентских данных — результаты вызовов
-    инструментов. Модель, обученная предсказывать вывод инструмента, начнёт
-    выдумывать содержимое документов вместо того, чтобы их запрашивать.
+    потерь: запрос, системная инструкция с описанием инструментов, служебные
+    токены картинки и результаты вызовов.
 
-    Размечаются ВСЕ реплики ассистента, а не только последняя: в
-    многоходовом диалоге и в траектории их несколько.
+    Размечаются ВСЕ реплики ассистента, а не только последняя: в многоходовом
+    диалоге и в траектории их несколько.
     """
 
     def __init__(
@@ -154,22 +103,21 @@ class ChatCollator:
     ) -> None:
         self.processor = processor
         self.system = system
-        #: Описания инструментов для ветки `tools` шаблона. Те же, что
-        #: при генерации, иначе модель учится на одном списке, а работает
-        #: с другим.
+        #: Описания инструментов для ветки `tools` шаблона. Те же, что при
+        #: генерации, иначе модель учится на одном списке, а работает с другим.
         self.tools = tools
         self.mask_prompt = mask_prompt
 
         #: Скрывать блок размышления внутри реплики ассистента.
         #:
-        #: У рассуждающей модели шаблон вставляет `<think>` даже в те
-        #: реплики, где рассуждения нет, — получается пустой блок.
-        #: Обучаясь на нём, модель усваивает «размышлять не нужно»,
-        #: и дообучение под правила поведения заодно отучает её думать.
+        #: У рассуждающей модели шаблон вставляет `<think>` даже в те реплики,
+        #: где рассуждения нет, — получается пустой блок. Обучаясь на нём,
+        #: модель усваивает «размышлять не нужно», и дообучение под правила
+        #: поведения заодно отучает её думать.
         #:
-        #: Маскирование оставляет вопрос открытым: градиент не идёт ни
-        #: за рассуждение, ни против. Выключите, если рассуждения есть
-        #: в самих данных и вы хотите им учить.
+        #: Маскирование оставляет вопрос открытым: градиент не идёт ни за
+        #: рассуждение, ни против. Выключите, если рассуждения есть в самих
+        #: данных и вы хотите им учить.
         self.mask_thinking = mask_thinking
 
         tokenizer = processor.tokenizer
@@ -209,10 +157,10 @@ class ChatCollator:
     def _hide_thinking(self, masked: torch.Tensor, ids: list[int]) -> None:
         """Закрыть блоки размышления обратно.
 
-        Вызывается после того, как реплики ассистента открыты: блок
-        `<think>` лежит внутри них и иначе попал бы в градиент.
-        Незакрытый блок скрывается до конца последовательности —
-        обрыв означает, что ответа в примере нет вовсе.
+        Вызывается после того, как реплики ассистента открыты: блок `<think>`
+        лежит внутри них и иначе попал бы в градиент. Незакрытый блок
+        скрывается до конца последовательности — обрыв означает, что ответа
+        в примере нет вовсе.
         """
         cursor = 0
         while (start := _find_subsequence(ids, self.think_open_ids, cursor)) != -1:
@@ -248,33 +196,6 @@ class ChatCollator:
         return batch
 
 
-def describe(samples: Sequence[Sample], processor: Any = None) -> str:
-    """Сводка перед обучением.
-
-    Смотрите на долю обучаемых токенов: если она меньше нескольких процентов,
-    почти весь батч уходит впустую и стоит поднять размер примеров или
-    включить упаковку.
-    """
-    if not samples:
-        return "датасет пуст"
-
-    turns = [len(s.messages) for s in samples]
-    with_images = sum(bool(s.images) for s in samples)
-    lines = [
-        f"примеров {len(samples)}, с картинками {with_images}",
-        f"реплик на пример: медиана {sorted(turns)[len(turns) // 2]}, максимум {max(turns)}",
-    ]
-
-    if processor is not None:
-        collator = ChatCollator(processor)
-        batch = collator(samples[: min(8, len(samples))])
-        total = batch["labels"].numel()
-        trained = int((batch["labels"] != IGNORE_INDEX).sum())
-        lines.append(f"обучаемых токенов {trained}/{total} ({trained / total:.0%})")
-
-    return "\n".join(lines)
-
-
 def preview(
     sample: Sample,
     processor: Any,
@@ -284,12 +205,11 @@ def preview(
 ) -> str:
     """Показать, на чём модель учится в этом примере.
 
-    Обучаемые токены выделены ⟦скобками⟧, остальное скрыто от функции
-    потерь. Самая быстрая проверка коллатора из существующих: если внутри
-    скобок оказался вопрос пользователя или вывод инструмента —
-    маскирование сломано, и обучение пойдёт не туда.
+    Обучаемые токены выделены ⟦скобками⟧, остальное скрыто от функции потерь.
+    Самая быстрая проверка коллатора: если внутри скобок оказался запрос
+    студента или текст навыка, маскирование сломано.
 
-        >>> print(preview(samples[0], processor))
+        >>> print(preview(sample, processor, system=SYSTEM, tools=TOOLS))
     """
     collator = ChatCollator(processor, system=system, tools=tools)
     batch = collator([sample])
@@ -307,5 +227,5 @@ def preview(
     if trained:
         parts.append("⟧")
 
-    share = sum(l != IGNORE_INDEX for l in labels) / len(labels)
+    share = sum(label != IGNORE_INDEX for label in labels) / len(labels)
     return f"{''.join(parts)}\n\n[обучаемых токенов {share:.0%} из {len(labels)}]"

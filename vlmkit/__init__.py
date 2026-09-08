@@ -1,65 +1,67 @@
-"""vlmkit — вспомогательные части для дообучения VLM.
+"""vlmkit — части, которые скучно писать в каждой ячейке.
 
-Здесь нет обёрток над обучением: `LoraConfig`, `Trainer` и тренеры TRL
+Обёрток над обучением здесь нет: `LoraConfig`, `Trainer` и тренеры TRL
 вызываются напрямую в ноутбуке, иначе непонятно, что происходит.
-В пакете лежит только то, что скучно писать каждый раз:
 
-    model       загрузка, выгрузка памяти, отчёт по картам
-    data        формат примеров и коллатор с маскированием
-    evaluate    генерация на отложенной выборке и парные метрики
-    steering    векторы управления
+    data        формат примера и коллатор с маскированием
+    evaluate    perplexity и предпочтение пар по логитам
+    skills      единственный инструмент ассистента: select_skill
+    rubric      автопроверки ответа по рубрикам голд-сета
     toolcalls   разбор и сборка вызовов инструментов
-    skills      навыки — единственный инструмент ассистента студента
-    rubric      автопроверки ответов по рубрикам голд-сета
+    steering    векторы управления
     compat      фильтр аргументов и поиск тренеров TRL по версии
-    chat        диалог с моделью
-    guardrails  фильтрация запросов без дообучения
+    model       процессор и очистка видеопамяти
 
-Полный цикл обучения со всеми вызовами — в `notebooks/`.
+Модули, которым нужен torch (`data`, `evaluate`, `steering`, `model`),
+подгружаются по первому обращению: проверки данных и автопроверки
+работают на чистой стандартной библиотеке, без установленного torch.
+
+Сборка ситуации, агентский цикл, метрики и печать — в `notebooks/common.py`.
 """
 
-from vlmkit import compat, evaluate, rubric, skills, steering, toolcalls
-from vlmkit.chat import VLMChat
-from vlmkit.config import Settings, settings
-from vlmkit.data import ChatCollator, Sample, describe, load_jsonl, preview, save_jsonl
-from vlmkit.guardrails import (
-    GuardPipeline,
-    KeywordGuard,
-    ModelJudgeGuard,
-    OutputGuard,
-    Verdict,
-    refusal_system_prompt,
-)
-from vlmkit.model import LoadConfig, cleanup, free, load, memory_report
+import importlib
+from typing import Any
+
+from vlmkit import compat, rubric, skills, toolcalls
+
+_LAZY = {
+    "data": "vlmkit.data",
+    "evaluate": "vlmkit.evaluate",
+    "model": "vlmkit.model",
+    "steering": "vlmkit.steering",
+    "ChatCollator": "vlmkit.data",
+    "Sample": "vlmkit.data",
+    "preview": "vlmkit.data",
+    "cleanup": "vlmkit.model",
+    "load_processor": "vlmkit.model",
+    "memory_report": "vlmkit.model",
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _LAZY:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = importlib.import_module(_LAZY[name])
+    value = module if _LAZY[name].endswith(name) else getattr(module, name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "ChatCollator",
-    "GuardPipeline",
-    "KeywordGuard",
-    "LoadConfig",
-    "ModelJudgeGuard",
-    "OutputGuard",
     "Sample",
-    "Settings",
-    "VLMChat",
-    "Verdict",
-    "chat",
     "cleanup",
     "compat",
-    "toolcalls",
+    "data",
+    "evaluate",
+    "load_processor",
+    "memory_report",
+    "model",
+    "preview",
     "rubric",
     "skills",
-    "describe",
-    "evaluate",
-    "free",
-    "load",
-    "load_jsonl",
-    "memory_report",
-    "preview",
-    "refusal_system_prompt",
-    "save_jsonl",
-    "settings",
     "steering",
+    "toolcalls",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
