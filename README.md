@@ -26,12 +26,13 @@ product's rubrics.
     runs/filter, runs/assistant   one json per run: metrics and every answer
     books/, docs/          theory as PDF, benchmark notes, references
 
-Training is written out in the cells: LoRA config, the trainer, the loop over
+Training is written out in the cells: LoRA config, the trainer, the dict of
 preference methods, the steering hook. What repeats sits in `src`:
 `infer.generate` and `infer.judge` are thin wrappers over `apply_chat_template`
 and `generate`; `filter.evaluate` / `report.evaluate` score a model and write
 the run; `filter.show` / `report.show` print one table with the change against
-the base in brackets.
+the base in brackets. Only `infer` needs torch, and it is imported inside
+`evaluate`, so `01_data` and `06_results` open on a laptop with no GPU stack.
 
 ## Install
 

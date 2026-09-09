@@ -6,6 +6,7 @@ second line with a fixed phrase. Everything is scored by parsing that first
 line, so accuracy is exact and every run is comparable.
 
     load(split)                 train / dev / test as datasets.Dataset
+    to_sft(ds) / to_kto(ds)     the same rows as TRL expects them
     parse(answer)               -> (label, category) from the model's text
     score(rows, answers)        -> metrics and per-row detail
     evaluate(model, tok, name)  -> generate on test, score, save runs/filter/<name>.json
@@ -21,7 +22,8 @@ from typing import Any
 
 from datasets import Dataset, load_dataset
 
-from src import infer, metrics
+from src import metrics
+from src.data import to_kto, to_sft  # the views are the same for both tasks
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "filter"
@@ -135,6 +137,8 @@ COLUMNS = [
 
 def evaluate(model, tokenizer, name: str, *, note: str = "", dev_size: int = 40, max_new_tokens: int = 24) -> dict[str, Any]:
     """Generate on the test split, score, add dev perplexity and preference accuracy, save the run."""
+    from src import infer  # imported here so the data and results notebooks open without torch
+
     test = list(load("test"))
     dev = list(load("dev"))[:dev_size]
     answers = infer.generate(model, tokenizer, [r["prompt"] for r in test], max_new_tokens=max_new_tokens)

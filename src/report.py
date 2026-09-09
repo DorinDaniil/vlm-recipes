@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src import data, infer, metrics
+from src import data, metrics
 
 RUNS = data.ROOT / "runs" / "assistant"
 TESTS = {"product": "test_product", "extended": "test_extended"}
@@ -31,6 +31,8 @@ COLUMNS = [
 
 def evaluate(model, tokenizer, name: str, *, note: str = "", dev_size: int = 24, with_judge: bool = True) -> dict[str, dict]:
     """Score `model` on both tests and the dev sample, save the runs, return {test: result}."""
+    from src import infer  # imported here so the data and results notebooks open without torch
+
     dev = list(data.load("dev"))[:dev_size]
     ppl = infer.perplexity(model, tokenizer, dev)
     pref = infer.preference_accuracy(model, tokenizer, dev)
