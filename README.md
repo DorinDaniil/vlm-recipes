@@ -1,95 +1,83 @@
 # vlm-recipes
 
-Comparing fine-tuning methods on one product task: an assistant for a
-student writing a thesis in a document editor. A fragment of the document
-is open next to the chat, the student asks for something, the model
-answers with one message.
+Comparing fine-tuning methods on two product tasks of a thesis-writing
+assistant. Methods: LoRA SFT, preference training with DPO, ORPO, SimPO and
+KTO, and a steering vector. The base model in the examples is Qwen3.5-9B;
+nothing in the code is tied to it.
 
-There is no agent here on purpose. What is tuned is how the model writes
-and where it draws the line, because that is what carries over into any
-agent wrapper built later.
+**Filter** is the primary track. A request filter reads the student's message
+and the open document fragment and answers with one line: `PASS`, or `BLOCK`
+plus one of five categories of academic dishonesty. Short answers, exact
+metrics, no judge: accuracy, block recall, false blocks on lookalike traps,
+category accuracy. Differences between methods are visible at a glance.
 
-Methods: LoRA SFT, preference training with DPO, ORPO, SimPO and KTO, and
-a steering vector. The base model in the examples is Qwen3.5-9B; nothing in
-the code is tied to it.
+**Assistant** is the harder track kept for later: the full answer to the
+student, scored by deterministic checks and an LLM judge against the
+product's rubrics.
 
 ## Layout
 
-    notebooks/    the experiments, one method per notebook, Russian narration
-    src/          data access, deterministic checks, run files and charts
-    data/         raw situations and the rendered training files
-    tools/        build the data files, validate them
-    runs/         one json per run: metrics and every answer
-    books/        theory as PDF, sources in books/tex
-    docs/         benchmark notes
+    notebooks/filter/      01_data … 06_results, the primary track
+    notebooks/assistant/   01_data … 07_playground, the long-answer track
+    src/                   data, metrics, infer, report (assistant), filter (filter task)
+    data/filter/           raw.jsonl and the rendered train / dev / test
+    data/                  the assistant's raw situations and rendered splits
+    tools/                 build and validate data, rescore saved runs
+    runs/filter, runs/assistant   one json per run: metrics and every answer
+    books/, docs/          theory as PDF, benchmark notes, references
 
-Model loading, generation, the judge, LoRA, every trainer and the steering
-hooks live in notebook cells. `src` holds only what would be noise in a
-cell and never imports torch, so `01_data` and `06_results` open on any
-machine.
+Training is written out in the cells: LoRA config, the trainer, the loop over
+preference methods, the steering hook. What repeats sits in `src`:
+`infer.generate` and `infer.judge` are thin wrappers over `apply_chat_template`
+and `generate`; `filter.evaluate` / `report.evaluate` score a model and write
+the run; `filter.show` / `report.show` print one table with the change against
+the base in brackets.
 
 ## Install
 
     pip install -r requirements.txt
 
 `torch` is installed separately for the CUDA build your driver supports.
+Data files are committed; to rebuild them from the raw situations:
 
-    python tools/build_data.py    # data/raw/*.jsonl -> data/*.jsonl
-    python tools/check_data.py    # validate without a model
+    python tools/build_filter.py   # data/filter/raw.jsonl -> train / dev / test
+    python tools/build_data.py     # assistant: data/raw/*.jsonl -> data/*.jsonl
+    python tools/check_data.py     # assistant data validation, no model
+    python tools/rescore.py        # assistant: recompute saved runs after a check changes
 
-## Notebooks
+## Filter track
 
 | | |
 |---|---|
-| `01_data` | the task, the data format, reference against bad answer, what the checks measure |
-| `02_baseline` | the base model: generation, judge, metric formulas, judge agreement with people |
-| `03_sft` | SFT loss and LoRA, mask verified on a real example, before and after |
-| `04_preference` | DPO, ORPO, SimPO and KTO with their objectives, one loop over methods |
-| `05_steering` | a steering vector from the same pairs, swept by strength |
-| `06_results` | every run side by side, no model required |
-| `07_playground` | hand-typed requests against the base model and every saved adapter, streaming, steering on top |
+| `01_data` | the task, the one-line format, cases decided by the document, the traps |
+| `02_baseline` | base model: metrics, false blocks and missed violations listed |
+| `03_sft` | LoRA SFT on the labels, mask check, errors that remain |
+| `04_preference` | DPO, ORPO, SimPO, KTO on top of the SFT adapter |
+| `05_steering` | a block-direction vector from BLOCK rows, swept by strength |
+| `06_results` | table, recall against false blocks, recall per category, errors of the best method |
 
-Run them in order. Each experiment writes `runs/<method>-<test>.json` with
-the same metric names and saves its adapter to `runs/<method>-adapter`, which
-is what `07_playground` picks up.
+Data: 303 situations, 164 PASS and 139 BLOCK, 65 lookalike traps, 78 with a
+short document fragment; split 162 / 40 / 101. Every row is `prompt`,
+`chosen`, `rejected` in the TRL conversational format, so SFT, preference
+trainers and the steering vector read the same file. Wilson interval on the
+test is about ±10 points.
 
-## Data
-
-`data/raw/*.jsonl` is one situation per line the way a person writes it:
-document id, earlier turns, the student's request, a reference answer and
-a bad one, assigned checks, judge criteria. `tools/build_data.py` renders
-it into the conversational preference format of TRL:
-
-    prompt      list of chat messages, system and document included, ending with the student
-    chosen      one assistant message, the reference answer
-    rejected    one assistant message, a competent answer that breaks exactly one rule
-
-The same rows feed every method: SFT reads `prompt` and `chosen`,
-preference trainers read all three, KTO unpairs them.
-
-| split | rows | what it is |
+| metric | what it counts | better |
 |---|---|---|
-| train | 210 | training situations across fifteen subject areas |
-| dev | 47 | held out from the same source, for perplexity and preference accuracy |
-| test_product | 33 | the product's golden set: rubric, production answer, human verdict |
-| test_extended | 100 | our test on ten unseen documents, with false-refusal traps, empty documents, statistics errors and out-of-scope requests |
+| accuracy | right PASS / BLOCK label | up |
+| block_recall | violations labelled BLOCK | up |
+| false_block | legitimate requests labelled BLOCK | down |
+| trap_false_block | the same on lookalike traps only | down |
+| category_acc | right category among correctly blocked rows | up |
+| format_ok | answer starts with PASS or BLOCK | up |
+| perplexity, pref_acc | reference likelihood and pair preference on dev | down / up |
 
-Documents used in training never appear in either test.
+## Assistant track
 
-## Metrics
-
-| | |
-|---|---|
-| judge | share of answers the LLM judge accepts against the rubric |
-| checks_all | share of situations where every assigned check passed |
-| checks | mean share of assigned checks that passed |
-| refusal | share of must-refuse situations that got a refusal |
-| false_refusal | share of ordinary requests whose answer opened with a refusal |
-| length | mean answer length in characters |
-
-Shares come with a 95 % Wilson interval, roughly ±16 points on the product
-test and ±10 on the extended one. A shift smaller than that is not a
-result: on 33 rows one situation is already three points.
+Same notebooks and the same `src` conventions on the long-answer task: 210
+training situations, a 33-row product golden set and a 100-row extended
+test, deterministic checks plus an LLM judge, `report.evaluate` / `report.show`.
+Details in the notebooks; benchmarks and references in `docs/`.
 
 ## Reading
 

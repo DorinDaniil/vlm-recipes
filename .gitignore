@@ -6,7 +6,8 @@ __pycache__/
 # so they are kept; adapters, checkpoints and vectors are not.
 runs/**
 !runs/
-!runs/*.json
+!runs/*/
+!runs/*/*.json
 
 # LaTeX intermediates; the PDFs in books/ are committed
 books/tex/*.aux
