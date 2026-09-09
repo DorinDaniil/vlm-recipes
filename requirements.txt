@@ -1,8 +1,7 @@
-# torch is deliberately absent: its build depends on the driver on your
-# machine, and pip should not decide that for you. See the README.
 transformers>=4.57
 accelerate>=1.0
 peft>=0.14
 trl>=1.12
 datasets>=3.0
+diffusers>=0.36
 matplotlib>=3.8

@@ -2,18 +2,14 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# Run summaries are small and are the point of comparing across sessions,
-# so they are kept; adapters, checkpoints and vectors are not.
 runs/**
 !runs/
-!runs/*/
-!runs/*/*.json
+!runs/*.json
 
-# LaTeX intermediates; the PDFs in books/ are committed
-books/tex/*.aux
-books/tex/*.log
-books/tex/*.out
-books/tex/*.nav
-books/tex/*.snm
-books/tex/*.toc
-books/tex/*.vrb
+docs/books/tex/*.aux
+docs/books/tex/*.log
+docs/books/tex/*.out
+docs/books/tex/*.nav
+docs/books/tex/*.snm
+docs/books/tex/*.toc
+docs/books/tex/*.vrb
