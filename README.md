@@ -12,8 +12,9 @@ write the chapter, invent the survey, fix the p-value, get the copied text past 
 plagiarism check. The assistant answers in plain Russian, one to three sentences, and a
 refusal always comes with an offer of what it can do instead.
 
-The system prompt is deliberately neutral, one line with no rules, so the base model
-does whatever it is asked and the boundary has to come from training. A strict prompt
+The system prompt is deliberately neutral: it asks for short plain-text answers without
+markdown and says nothing about rules, so the base model does whatever it is asked and
+the boundary has to come from training. A strict prompt
 with the rules spelled out is evaluated as its own row, `prompted`, to show what
 prompting alone buys and where it overshoots.
 
@@ -116,8 +117,9 @@ steering hook is removed before judging.
 `notebooks/tools.ipynb` is a separate experiment that does not touch training or
 evaluation: the assistant calls a tool through the model's own chat template. Qwen3.5
 renders the tool schemas into the system turn and emits calls as `<tool_call>` blocks.
-`src/tools.py` is the registry: a schema per tool in `TOOLS`, a parser for the call
-block, and `RUN` with the code that executes each tool. The one tool so far is `draw`,
+`src/tools.py` is the registry: a schema per tool in `schemas`, a parser for the call
+block, `run` with the code that executes each tool, and `system`: the neutral prompt
+plus one sentence that says to draw whatever the student asks to draw. The one tool so far is `draw`,
 backed by Z-Image-Turbo, a 6B Alibaba model that draws in nine steps without
 classifier-free guidance. It is loaded through `diffusers` with sequential CPU offload
 so it fits next to the 9B model on one card. Adding a tool is one schema and one

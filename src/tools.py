@@ -1,37 +1,40 @@
 import re
-from pathlib import Path
 
-IMAGE_MODEL = "Tongyi-MAI/Z-Image-Turbo"
-IMAGES = Path(__file__).resolve().parents[1] / "runs" / "images"
+from src import data
 
-DRAW = {
+image_checkpoint = "Tongyi-MAI/Z-Image-Turbo"
+images = data.runs / "images"
+
+system = data.neutral + " Если студент просит что-нибудь нарисовать, вызови инструмент draw и опиши картинку образно, как её увидит художник."
+
+draw = {
     "type": "function",
     "function": {
         "name": "draw",
-        "description": "Нарисовать схему, иллюстрацию или график, когда картинка помогает объяснить студенту. Описание картинки на английском.",
+        "description": "Нарисовать картинку по просьбе студента: схему, иллюстрацию, образ. Описание на английском: что изображено, в каком стиле.",
         "parameters": {
             "type": "object",
-            "properties": {"prompt": {"type": "string", "description": "What to draw, in English"}},
+            "properties": {"prompt": {"type": "string", "description": "What to draw and in what style, in English"}},
             "required": ["prompt"],
         },
     },
 }
-TOOLS = [DRAW]
+schemas = [draw]
 
-CALL = re.compile(r"<tool_call>\s*<function=(\w+)>(.*?)</function>\s*</tool_call>", re.S)
-PARAM = re.compile(r"<parameter=(\w+)>\s*(.*?)\s*</parameter>", re.S)
+call_pattern = re.compile(r"<tool_call>\s*<function=(\w+)>(.*?)</function>\s*</tool_call>", re.S)
+param_pattern = re.compile(r"<parameter=(\w+)>\s*(.*?)\s*</parameter>", re.S)
 
 
 def calls(text):
-    return [(name, dict(PARAM.findall(body))) for name, body in CALL.findall(text)]
+    return [(name, dict(param_pattern.findall(body))) for name, body in call_pattern.findall(text)]
 
 
 def plain(text):
-    return CALL.sub("", text).strip()
+    return call_pattern.sub("", text).strip()
 
 
 class Painter:
-    def __init__(self, model_id=IMAGE_MODEL, steps=9, size=1024):
+    def __init__(self, model_id=image_checkpoint, steps=9, size=1024):
         import torch
         from diffusers import ZImagePipeline
 
@@ -41,11 +44,11 @@ class Painter:
         self.size = size
 
     def __call__(self, prompt, name):
-        IMAGES.mkdir(parents=True, exist_ok=True)
-        path = IMAGES / f"{name}.png"
+        images.mkdir(parents=True, exist_ok=True)
+        path = images / f"{name}.png"
         image = self.pipe(prompt, height=self.size, width=self.size, num_inference_steps=self.steps, guidance_scale=0.0).images[0]
         image.save(path)
         return path
 
 
-RUN = {"draw": lambda args, painter, name: painter(args["prompt"], name)}
+run = {"draw": lambda args, painter, name: painter(args["prompt"], name)}

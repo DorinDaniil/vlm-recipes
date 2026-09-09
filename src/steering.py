@@ -1,8 +1,8 @@
 import torch
 
-from src.data import RUNS
+from src import data
 
-VECTOR = RUNS / "steer" / "vector.pt"
+vector_path = data.runs / "steer" / "vector.pt"
 
 
 def layers(model):

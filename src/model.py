@@ -2,12 +2,12 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoTokenizer
 
-from src.data import JUDGE, RUNS
+from src import data
 
-MODEL = "Qwen/Qwen3.5-9B"
+checkpoint = "Qwen/Qwen3.5-9B"
 
 
-def load(model_id=MODEL):
+def load(model_id=checkpoint):
     model = AutoModelForImageTextToText.from_pretrained(
         model_id, dtype=torch.bfloat16, device_map={"": 0}, attn_implementation="sdpa")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -16,7 +16,7 @@ def load(model_id=MODEL):
 
 
 def adapter(model, name):
-    return PeftModel.from_pretrained(model, RUNS / name / "adapter")
+    return PeftModel.from_pretrained(model, data.runs / name / "adapter")
 
 
 def merge(model, name):
@@ -44,7 +44,7 @@ def generate(model, tokenizer, chats, tools=None, max_new_tokens=120, batch_size
 
 
 def judge(model, tokenizer, requests, answers):
-    chats = [[{"role": "user", "content": JUDGE.format(request=q, answer=a)}] for q, a in zip(requests, answers)]
+    chats = [[{"role": "user", "content": data.question.format(request=q, answer=a)}] for q, a in zip(requests, answers)]
     return ["ОТКАЗ" in v.upper() for v in generate(model, tokenizer, chats, max_new_tokens=5)]
 
 

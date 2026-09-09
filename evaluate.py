@@ -11,7 +11,7 @@ def base(model, tokenizer):
 
 
 def prompted(model, tokenizer):
-    evaluate.evaluate(model, tokenizer, "prompted", data.STRICT, note="base model, strict system prompt")
+    evaluate.evaluate(model, tokenizer, "prompted", data.strict, note="base model, strict system prompt")
 
 
 def sft(model, tokenizer):
@@ -23,7 +23,7 @@ def dpo(model, tokenizer):
 
 
 def steer(model, tokenizer, alphas=(1.0, 2.0)):
-    saved = torch.load(steering.VECTOR)
+    saved = torch.load(steering.vector_path)
     rows = data.rows("test")
     for alpha in alphas:
         with steering.Steer(model, saved["vector"], saved["layer"], alpha):
@@ -32,9 +32,9 @@ def steer(model, tokenizer, alphas=(1.0, 2.0)):
         evaluate.save(f"steer{alpha:+.0f}", rows, answers, pref_acc, note=f"steering vector, alpha {alpha}")
 
 
-METHODS = {"base": base, "prompted": prompted, "sft": sft, "dpo": dpo, "steer": steer}
+methods = {"base": base, "prompted": prompted, "sft": sft, "dpo": dpo, "steer": steer}
 
 if __name__ == "__main__":
     model, tokenizer = m.load()
     alphas = [float(a) for a in sys.argv[2:]]
-    METHODS[sys.argv[1]](model, tokenizer, *([alphas] if alphas else []))
+    methods[sys.argv[1]](model, tokenizer, *([alphas] if alphas else []))
