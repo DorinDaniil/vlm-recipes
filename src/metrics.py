@@ -180,7 +180,12 @@ def run(answer: str, case: dict) -> dict[str, bool]:
 
 
 def wilson(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """95 % Wilson interval for a share; on 36 rows it is about 15 points wide."""
+    """95 % Wilson interval for a share.
+
+    Asymmetric by construction: the centre is pulled towards 0.5, so at a
+    share of 1 the upper bound is 1 while the lower one is well below it.
+    Half-width at a share near 0.5 is about 16 points on 33 rows, 10 on 100.
+    """
     if n == 0:
         return 0.0, 0.0
     p = successes / n
@@ -228,6 +233,8 @@ def score(cases: list[dict], answers: list[str], verdicts: list[bool] | None = N
     if verdicts is not None:
         metrics["judge"] = sum(verdicts) / n
         metrics["judge_ci"] = wilson(sum(verdicts), len(rows))
+        for row, verdict in zip(rows, verdicts):
+            row["judge"] = bool(verdict)
     by_check: dict[str, list[bool]] = {}
     for r in rows:
         for name, ok in r["checks"].items():

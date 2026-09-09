@@ -87,9 +87,9 @@ Documents used in training never appear in either test.
 | false_refusal | share of ordinary requests whose answer opened with a refusal |
 | length | mean answer length in characters |
 
-Shares come with a 95 % Wilson interval: about 15 points wide on the
-product test, about 9 on the extended one. A difference narrower than the
-interval is not a result.
+Shares come with a 95 % Wilson interval, roughly ±16 points on the product
+test and ±10 on the extended one. A shift smaller than that is not a
+result: on 33 rows one situation is already three points.
 
 ## Reading
 
