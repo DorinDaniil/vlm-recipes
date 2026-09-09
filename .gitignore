@@ -2,10 +2,13 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# адаптеры, векторы и сводки прогонов: пишутся ноутбуками, весят много
-runs/
+# Run summaries are small and are the point of comparing across sessions,
+# so they are kept; adapters, checkpoints and vectors are not.
+runs/**
+!runs/
+!runs/*.json
 
-# промежуточные файлы LaTeX; PDF в books/ коммитятся
+# LaTeX intermediates; the PDFs in books/ are committed
 books/tex/*.aux
 books/tex/*.log
 books/tex/*.out

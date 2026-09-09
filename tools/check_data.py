@@ -1,19 +1,11 @@
-"""Проверка наборов данных. Ни модели, ни GPU не нужно — секунды.
+"""Validate the rendered dataset without a model. Seconds, no torch, no GPU.
 
     python tools/check_data.py
 
-Что проверяется:
-  * структура строк: обязательные поля, известный навык, известный документ;
-  * эталонные ответы проходят назначенные им автопроверки — иначе метрика
-    недостижима по построению;
-  * плохие ответы автопроверки НЕ проходят; те немногие, что проходят,
-    печатаются: их ловит только судья, и полезно знать, сколько их;
-  * эталон не начинается с отказа там, где отказ не требуется, — иначе
-    ложные отказы завышены уже на разметке;
-  * документы трейна и теста не пересекаются;
-  * поля `route` и `split` заполнены известными значениями: `route`
-    отделяет ситуации с обязательным отказом, `split` — обучение
-    и свою отложенную выборку.
+For every split: required fields, alternating roles ending with the student,
+reference answers pass the checks assigned to them, bad answers mostly fail
+them, no reference answer opens with a refusal unless it should, and no
+document is shared between training and either test set.
 """
 
 from __future__ import annotations
@@ -26,84 +18,65 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from vlmkit import rubric, skills  # noqa: E402
+from src import metrics  # noqa: E402
 
 DATA = ROOT / "data"
-REQUIRED = {"id", "split", "category", "skill", "prompt", "document", "checks", "answer", "rejected"}
+SPLITS = ("train", "dev", "test_product", "test_extended")
+REQUIRED = {"id", "category", "prompt", "chosen", "rejected", "checks", "must_include",
+            "must_not_include", "must_refuse", "rubric", "document"}
 
 
-def load(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+def load(name: str) -> list[dict]:
+    return [json.loads(line) for line in (DATA / f"{name}.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def main() -> None:
     documents = json.loads((DATA / "documents.json").read_text(encoding="utf-8"))
-    known_skills = set(skills.names())
-    files = [DATA / "golden.jsonl"] + sorted((DATA / "train").glob("*.jsonl"))
-
     problems: list[str] = []
-    seen: set[str] = set()
     judge_only: list[str] = []
-    rows_by_file: dict[str, list[dict]] = {}
+    seen: set[str] = set()
+    docs_by_split: dict[str, set[str]] = {}
 
-    for path in files:
-        rows = load(path)
-        rows_by_file[path.stem] = rows
-        bad_ideal, easy_rejected = [], []
+    for name in SPLITS:
+        rows = load(name)
+        docs_by_split[name] = {r["document"] for r in rows if r["document"]}
         for row in rows:
-            where = f"{path.name}:{row.get('id', '?')}"
+            where = f"{name}:{row.get('id', '?')}"
             if missing := REQUIRED - set(row):
                 problems.append(f"{where}: нет полей {sorted(missing)}")
+                continue
             if row["id"] in seen:
                 problems.append(f"{where}: повтор id")
             seen.add(row["id"])
-            if row["skill"] not in known_skills:
-                problems.append(f"{where}: неизвестный навык {row['skill']}")
-            if row.get("route") not in ("agent", "guard"):
-                problems.append(f"{where}: route = {row.get('route')!r}")
-            if row["split"] not in ("train", "dev", "test"):
-                problems.append(f"{where}: split = {row['split']!r}")
+            roles = [m["role"] for m in row["prompt"]]
+            if roles[0] != "system" or roles[-1] != "user" or any(a == b for a, b in zip(roles[1:], roles[2:])):
+                problems.append(f"{where}: роли идут не по очереди: {roles}")
             if row["document"] and row["document"] not in documents:
                 problems.append(f"{where}: неизвестный документ {row['document']}")
-            for turn in row.get("history", []):
-                if set(turn) != {"user", "skill", "assistant"} or turn["skill"] not in known_skills:
-                    problems.append(f"{where}: испорченный ход истории")
 
             case = {**row, "document": documents.get(row["document"], "")}
-            checks = rubric.run_checks(row["answer"], case)
-            if not all(checks.values()):
-                bad_ideal.append(f"{row['id']} ({', '.join(k for k, v in checks.items() if not v)})")
-            if all(rubric.run_checks(row["rejected"], case).values()):
-                easy_rejected.append(row["id"])
-            if "refuses" not in row["checks"] and rubric.refuses_opening(row["answer"], case):
+            chosen, rejected = row["chosen"][0]["content"], row["rejected"][0]["content"]
+            result = metrics.run(chosen, case)
+            if not all(result.values()):
+                problems.append(f"{where}: эталон не проходит {[k for k, v in result.items() if not v]}")
+            if all(metrics.run(rejected, case).values()):
+                judge_only.append(row["id"])
+            if not row["must_refuse"] and "refuses" not in row["checks"] and metrics.refuses_opening(chosen, case):
                 problems.append(f"{where}: эталон начинается с отказа, но отказ не размечен")
 
-        judge_only += easy_rejected
-        problems += [f"{path.name}: эталон не проходит свои проверки — {x}" for x in bad_ideal]
-        guard = sum(r.get("route") == "guard" for r in rows)
-        dev = sum(r["split"] == "dev" for r in rows)
-        print(f"{path.stem:26} {len(rows):4}  guard {guard:3}  dev {dev:3}  "
-              f"многоходовых {sum(bool(r.get('history')) for r in rows):3}")
+        print(f"{name:14} {len(rows):4}   отказ обязателен {sum(r['must_refuse'] for r in rows):3}"
+              f"   многоходовых {sum(len(r['prompt']) > 2 for r in rows):3}"
+              f"   без документа {sum(not r['document'] for r in rows):3}"
+              f"   категорий {len(Counter(r['category'] for r in rows))}")
 
-    train = [r for name, rows in rows_by_file.items() if name != "golden" for r in rows]
-    test_docs = {r["document"] for r in rows_by_file["golden"] if r["document"]}
-    overlap = sorted({r["document"] for r in train} & test_docs)
-    if overlap:
-        problems.append(f"документы трейна пересекаются с тестом: {overlap}")
+    training = docs_by_split["train"] | docs_by_split["dev"]
+    for test in ("test_product", "test_extended"):
+        if overlap := sorted(training & docs_by_split[test]):
+            problems.append(f"документы обучения встречаются в {test}: {overlap}")
 
-    total = len(train) + len(rows_by_file["golden"])
-    own_train = [r for r in train if r["split"] == "train"]
-    own_dev = [r for r in train if r["split"] == "dev"]
-    print(f"\nтест продукта {len(rows_by_file['golden'])}, обучение {len(own_train)}, "
-          f"свой dev {len(own_dev)}, документов {len(documents)}")
-    print("навыки в обучении:", dict(Counter(r["skill"] for r in own_train)))
-    print("навыки в dev:     ", dict(Counter(r["skill"] for r in own_dev)))
-    print(f"маршрут guard: {sum(r.get('route') == 'guard' for r in train)} из {len(train)}"
-          f"; с пустым документом: {sum(not r['document'] for r in train)}"
-          f"; заканчиваются вопросом: {sum(r['answer'].rstrip().endswith('?') for r in train)}")
-    print(f"плохих ответов, которые проходят автопроверки (ловит только судья): {len(judge_only)} из {total}")
-    if judge_only:
-        print("  " + ", ".join(judge_only))
+    total = sum(len(load(n)) for n in SPLITS)
+    print(f"\nдокументов {len(documents)}: в обучении {len(training)}, в тестах {len(docs_by_split['test_product'] | docs_by_split['test_extended'])}")
+    print(f"плохих ответов, проходящих все автопроверки: {len(judge_only)} из {total}, их ловит только судья")
 
     print()
     if problems:

@@ -1,9 +1,8 @@
-# torch здесь намеренно НЕ указан: его версия зависит от драйвера вашей
-# машины, и pip не должен решать это за вас. См. README, раздел «Установка».
+# torch is deliberately absent: its build depends on the driver on your
+# machine, and pip should not decide that for you. See the README.
 transformers>=4.57
 accelerate>=1.0
 peft>=0.14
-trl>=0.13
+trl>=0.20
 datasets>=3.0
-pillow>=10.0          # картинки в примерах, если добавите сканы страниц
-huggingface_hub>=0.26  # tools/check_model.py смотрит карточку модели
+matplotlib>=3.8
