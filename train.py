@@ -51,7 +51,6 @@ def sft(model, tokenizer):
 
 
 def dpo(model, tokenizer):
-    model = m.merge(model, "sft")
     config = DPOConfig(
         output_dir=str(data.runs / "dpo"),
         num_train_epochs=2,
@@ -68,10 +67,11 @@ def dpo(model, tokenizer):
 def steer(model, tokenizer):
     layer = len(steering.layers(model)) // 2
     rows = [r for r in data.rows("train") if r["decision"] == "decline"]
-    vector = steering.build(model, tokenizer, data.pairs(rows), layer)
+    vector, scale = steering.build(model, tokenizer, data.pairs(rows), layer)
     steering.vector_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"vector": vector, "layer": layer}, steering.vector_path)
-    print(f"steer: layer {layer}, {len(rows)} rows, norm {vector.norm():.2f}")
+    torch.save({"vector": vector, "layer": layer, "scale": scale}, steering.vector_path)
+    print(f"steer: layer {layer}, {len(rows)} rows, vector norm {vector.norm():.1f}, hidden norm {scale:.1f}, "
+          f"alpha 1 shifts by {100 * vector.norm() / scale:.0f}%")
 
 
 methods = {"sft": sft, "dpo": dpo, "steer": steer}

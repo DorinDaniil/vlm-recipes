@@ -5,7 +5,7 @@ from src import data
 image_checkpoint = "Tongyi-MAI/Z-Image-Turbo"
 images = data.runs / "images"
 
-system = data.neutral + " Если студент просит что-нибудь нарисовать, вызови инструмент draw и опиши картинку образно, как её увидит художник."
+system = data.neutral + " Если студент просит что-нибудь нарисовать, не описывай картинку словами, а вызови инструмент draw; описание для него составь по-английски и образно, как увидел бы художник."
 
 draw = {
     "type": "function",
@@ -42,13 +42,16 @@ class Painter:
         self.pipe.enable_sequential_cpu_offload()
         self.steps = steps
         self.size = size
+        self.count = 0
 
-    def __call__(self, prompt, name):
+    def __call__(self, prompt):
         images.mkdir(parents=True, exist_ok=True)
-        path = images / f"{name}.png"
+        self.count += 1
+        path = images / f"{self.count:03d}.png"
         image = self.pipe(prompt, height=self.size, width=self.size, num_inference_steps=self.steps, guidance_scale=0.0).images[0]
         image.save(path)
         return path
 
 
-run = {"draw": lambda args, painter, name: painter(args["prompt"], name)}
+def executors(painter=None):
+    return {"draw": lambda args: painter(args["prompt"])}

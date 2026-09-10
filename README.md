@@ -29,11 +29,11 @@ that learned "when in doubt, refuse" fails exactly there, and the table shows it
     src/model.py         load, generate, judge, log-probabilities
     src/steering.py      behaviour vector and the hook that applies it
     src/evaluate.py      answer the test, save a run, metrics, the table
-    src/tools.py         tool registry for the separate tools experiment
+    src/tools.py         tool registry: schemas, call parser, executors, the image model
+    src/chat.py          multi-turn chat with tool calls and a switchable checkpoint
     train.py             python train.py sft | dpo | steer
-    evaluate.py          python evaluate.py base | prompted | sft | dpo | steer [alpha ...]
-    judge.py             score every saved run with the base model, print the table
-    notebooks/           data.ipynb, results.ipynb open without a GPU; tools.ipynb needs one
+    evaluate.py          python evaluate.py base | prompted | sft | dpo | steer [alpha ...]; prints the table
+    notebooks/           data.ipynb, results.ipynb open without a GPU; tools.ipynb and chat.ipynb need one
     runs/                one json per run; adapters, vectors and images live in runs/<name>/
     docs/                theory as PDF with LaTeX sources, benchmark notes, references
 
@@ -70,27 +70,31 @@ into the TRL conversational format (`prompt`, `chosen`, `rejected`) at load time
 | base | the base model with the neutral prompt |
 | prompted | the base model with the strict prompt, no training |
 | sft | LoRA on the good answers, loss on the completion only |
-| dpo | DPO on the good / bad pairs, starting from the merged SFT adapter |
+| dpo | LoRA trained with DPO on the good / bad pairs from the base model; the reference policy is the base |
 | steer | a behaviour vector from the decline rows added to the residual stream, swept by strength |
 
 ## Metrics
 
-One judgement per test row, made by the untouched base model after every run is saved:
-did the assistant perform the request, or decline it and offer something else. Every
-metric follows from that bit.
+There is no automatic judge. `evaluate.py` generates the answers on the 120 test rows,
+stores them in `runs/<name>.json`, and reports only what can be computed exactly from the
+model's own probabilities and its output. Whether an answer helped or declined is read
+by a person from the transcripts.
 
 | column | meaning | better |
 |---|---|---|
-| accuracy | rows where the behaviour matched the expected decision | up |
-| declined | decline rows the model did not perform | up |
-| false decline | help rows the model refused | down |
-| on traps | the same on the trap rows only | down |
-| pref acc | test pairs where the good answer is more likely than the bad one | up |
-| words | mean answer length | |
+| pref acc | test pairs where the good reference answer is more likely than the bad one, by mean token log-probability | up |
+| ppl good | perplexity of the good reference answers: how natural the model finds the target behaviour | down |
+| ppl bad | perplexity of the bad reference answers: how far the model moved away from the opposite behaviour | up |
+| tokens | mean length of the generated answer in tokens | |
 
-On 120 rows the 95 % interval is about ±9 points. The chart in `results.ipynb` puts
-declined against false declines: a method that learned the boundary moves up and left,
-a method that simply refuses more moves up and right.
+Deltas in brackets are against the `base` row. To read the behaviour itself:
+
+    python -c "from src import evaluate; print(evaluate.table())"
+    python -c "from src import evaluate; print(evaluate.transcript('sft', decision='decline'))"
+    python -c "from src import evaluate; print(evaluate.compare(['base', 'sft', 'dpo'], range(0, 120, 10)))"
+
+`transcript` prints every request and answer of one run, optionally filtered by decision
+or trap; `compare` prints the same rows across several runs side by side.
 
 ## Run
 
@@ -103,14 +107,10 @@ with 32 GB:
     python evaluate.py prompted
     python train.py sft      && python evaluate.py sft
     python train.py dpo      && python evaluate.py dpo
-    python train.py steer    && python evaluate.py steer 1 2
-    python judge.py
+    python train.py steer    && python evaluate.py steer 0.5 1 2
 
-`evaluate.py` only generates answers and saves them; `judge.py` loads the base model once,
-scores every run in `runs/` and prints the table. Judging is a separate step so that the
-judge is always the same model: with DPO the SFT adapter is merged into the weights, and
-a judge inside that process would not be the base any more. For the same reason the
-steering hook is removed before judging.
+Every method starts from the base model, so the rows compare methods, not pipelines.
+Each `evaluate.py` call ends by printing the table over all runs saved so far.
 
 ## Tools
 
@@ -118,12 +118,22 @@ steering hook is removed before judging.
 evaluation: the assistant calls a tool through the model's own chat template. Qwen3.5
 renders the tool schemas into the system turn and emits calls as `<tool_call>` blocks.
 `src/tools.py` is the registry: a schema per tool in `schemas`, a parser for the call
-block, `run` with the code that executes each tool, and `system`: the neutral prompt
+block, `executors` with the code that runs each tool, and `system`: the neutral prompt
 plus one sentence that says to draw whatever the student asks to draw. The one tool so far is `draw`,
 backed by Z-Image-Turbo, a 6B Alibaba model that draws in nine steps without
 classifier-free guidance. It is loaded through `diffusers` with sequential CPU offload
 so it fits next to the 9B model on one card. Adding a tool is one schema and one
 function.
+
+## Chat
+
+`notebooks/chat.ipynb` is a multi-turn prototype on the same pieces. `chat.Chat` keeps
+the history as a plain list of messages, renders it through the chat template, parses
+tool calls, runs them through `tools.executors`, appends the results as `tool` messages
+and generates the final answer. The `variant` field picks who answers without reloading
+the model: `"base"`, an adapter name loaded with `model.adapters`, or `("steer", alpha)`
+for the behaviour vector. Memory is deliberately the simplest possible: the whole history
+goes into every prompt.
 
 ## Reading
 

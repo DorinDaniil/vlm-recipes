@@ -16,17 +16,14 @@ def load(model_id=checkpoint):
 
 
 def adapter(model, name):
-    return PeftModel.from_pretrained(model, data.runs / name / "adapter")
+    return PeftModel.from_pretrained(model, str(data.runs / name / "adapter"))
 
 
-def merge(model, name):
-    return adapter(model, name).merge_and_unload()
-
-
-def tuned(model, name):
-    if name == "dpo":
-        model = merge(model, "sft")
-    return adapter(model, name)
+def adapters(model, names):
+    model = PeftModel.from_pretrained(model, str(data.runs / names[0] / "adapter"), adapter_name=names[0])
+    for name in names[1:]:
+        model.load_adapter(str(data.runs / name / "adapter"), adapter_name=name)
+    return model
 
 
 def generate(model, tokenizer, chats, tools=None, max_new_tokens=120, batch_size=16):
@@ -43,11 +40,6 @@ def generate(model, tokenizer, chats, tools=None, max_new_tokens=120, batch_size
     return [a.strip() for a in answers]
 
 
-def judge(model, tokenizer, requests, answers):
-    chats = [[{"role": "user", "content": data.question.format(request=q, answer=a)}] for q, a in zip(requests, answers)]
-    return ["ОТКАЗ" in v.upper() for v in generate(model, tokenizer, chats, max_new_tokens=5)]
-
-
 def logprob(model, tokenizer, chat, answer):
     text = tokenizer.apply_chat_template(chat, add_generation_prompt=True, enable_thinking=False, tokenize=False)
     prefix = tokenizer(text, add_special_tokens=False)["input_ids"]
@@ -59,7 +51,7 @@ def logprob(model, tokenizer, chat, answer):
     return -loss.item()
 
 
-def preference_accuracy(model, tokenizer, pairs):
-    wins = sum(logprob(model, tokenizer, r["prompt"], r["chosen"][0]["content"])
-               > logprob(model, tokenizer, r["prompt"], r["rejected"][0]["content"]) for r in pairs)
-    return wins / len(pairs)
+def logprobs(model, tokenizer, pairs):
+    good = [logprob(model, tokenizer, r["prompt"], r["chosen"][0]["content"]) for r in pairs]
+    bad = [logprob(model, tokenizer, r["prompt"], r["rejected"][0]["content"]) for r in pairs]
+    return good, bad
