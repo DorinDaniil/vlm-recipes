@@ -3,8 +3,6 @@ __pycache__/
 .ipynb_checkpoints/
 
 runs/**
-!runs/
-!runs/*.json
 
 docs/books/tex/*.aux
 docs/books/tex/*.log
